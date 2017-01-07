@@ -18,14 +18,15 @@ local awful = require("awful")
 local wibox = require("wibox")
 local naughty = require("naughty")
 local beautiful = require("beautiful")
-local pulseaudio = require("apw.pulseaudio")
+local pulseaudio = require("apw4.pulseaudio")
 
 local pulsewidget = { mt = {} }
 local p = pulseaudio:Create()
 
-function pulsewidget:setcolor(mute)
+local function _update()
     if pulsewidget.progressbar then
-        if mute then
+        pulsewidget.progressbar:set_value(p.Volume)
+        if p.Mute then
             pulsewidget.progressbar:set_color(pulsewidget.color_mute)
             pulsewidget.progressbar:set_background_color(pulsewidget.color_bg_mute)
         else
@@ -33,16 +34,9 @@ function pulsewidget:setcolor(mute)
             pulsewidget.progressbar:set_background_color(pulsewidget.color_bg)
         end
     end
-end
-
-local function _update()
-    if pulsewidget.progressbar then
-        pulsewidget.progressbar:set_value(p.Volume)
-    end
     if pulsewidget.textbox then
         pulsewidget.textbox:set_text('' .. p.Perc)
     end
-    pulsewidget:setcolor(p.Mute)
 end
 
 function pulsewidget.up(step)
@@ -67,104 +61,91 @@ function pulsewidget.update()
     _update()
 end
 
-local notification
+local tooltip
 
-function pulsewidget:hide()
-    if notification ~= nil then
-        naughty.destroy(notification)
-        notification = nil
+function pulsewidget:hide_tooltip()
+    if tooltip ~= nil then
+        naughty.destroy(tooltip)
+        tooltip = nil
     end
 end
 
-function pulsewidget.text_grabber()
-    local volumes = io.popen("pacmd list-sinks | grep -i " .. "'volume: f'" .. " | awk '{printf $5 " .. '"\\' .. 'n"' .. "}'")
-    local names = io.popen("pacmd list-sinks | grep -i " .. "'profile.name'" .. " | awk '{printf $3 " .. '"\\' .. 'n"' .. "}'")
-    local mutes = io.popen("pacmd list-sinks | grep -i 'muted' ")
-    local vol = {}
-    local nm = {}
-    local mu = {}
-    for v in mutes:lines() do
-        table.insert(mu, v)
+function pulsewidget:show_tooltip()
+    if tooltip then
+        naughty.destroy(tooltip)
     end
-    for v in names:lines() do
-        table.insert(nm, v)
-    end
-    for v in volumes:lines() do
-        table.insert(vol, v)
-    end
-    volumes:close()
-    names:close()
-    mutes:close()
-    local result = ""
-    for i, k in pairs(vol) do
-        result = result .. nm[i] .. "       " .. k .. mu[i] .. "\n"
-    end
-    return result
-end
-
-function pulsewidget:show(t_out)
-    pulsewidget:hide()
-
-    notification = naughty.notify({
+    tooltip = naughty.notify({
         preset = fs_notification_preset,
-        text = pulsewidget.text_grabber(),
-        timeout = t_out,
+        text = self.tooltip(),
+        timeout = 0,
         screen = mouse.screen,
     })
 end
 
-function pulsewidget:attach(widget, _)
-    widget:connect_signal('mouse::enter', function() pulsewidget:show(0) end)
-    widget:connect_signal('mouse::leave', function() pulsewidget:hide() end)
+local function _tooltip()
+    local volumes = io.popen("pacmd list-sinks | grep -i 'volume: f' | awk '{print $5}'")
+    local vol = {}
+    for v in volumes:lines() do
+        table.insert(vol, v)
+    end
+    volumes:close()
+
+    local names = io.popen("pacmd list-sinks | grep -i 'profile.name' | awk '{print $3}' | tr -d '\"'")
+    local nm = {}
+    for v in names:lines() do
+        table.insert(nm, v)
+    end
+    names:close()
+
+    local mutes = io.popen("pacmd list-sinks | grep -i 'muted' ")
+    local mu = {}
+    for v in mutes:lines() do
+        table.insert(mu, v)
+    end
+    mutes:close()
+
+    local result = ""
+    for i, k in pairs(vol) do
+        result = result .. nm[i] .. "\t" .. k .. mu[i] .. "\n"
+    end
+    return result:sub(1, -2)  -- removing the last \n
 end
 
-function pulsewidget:setbuttons(widget, args)
-    local args = args or {}
-    local mixer1 = args.mixer1 or pulsewidget.mixer1
-    local mixer2 = args.mixer2 or pulsewidget.mixer2
-    local mute = args.mute or pulsewidget.togglemute
-    local minu = args.minu or pulsewidget.minup
-    local mind = args.mind or pulsewidget.mindown
-    local table = args.table or {}
-    local buttons = awful.util.table.join(awful.button({}, 1, mixer1),
-        awful.button({}, 12, mute),
-        awful.button({}, 2, mute),
-        awful.button({}, 3, mixer2),
-        awful.button({}, 4, minu),
-        awful.button({}, 5, mind))
+local function _attach_tooltip(widget)
+    widget:connect_signal('mouse::enter', function() pulsewidget:show_tooltip() end)
+    widget:connect_signal('mouse::leave', function() pulsewidget:hide_tooltip() end)
+end
 
-    for _, k in pairs(table) do
-        awful.util.table.join(buttons, k)
+local function _assign_buttons(widget, buttons)
+    local buttons_table = {}
+    for button, fn in pairs(buttons) do
+        buttons_table = awful.util.table.join(buttons_table, awful.button({}, button, fn))
     end
-    widget:buttons(buttons)
+    widget:buttons(buttons_table)
 end
 
 -- initialize
 local function new(args)
     -- Configuration variables
-    pulsewidget.width = args.width or beautiful.apw_width or 10 -- width in pixels of progressbar
-    pulsewidget.margin_right = args.margin_right or beautiful.apw_margin_right or 0 -- right margin in pixels of progressbar
-    pulsewidget.margin_left = args.margin_left or beautiful.apw_margin_left or 0 -- left margin in pixels of progressbar
-    pulsewidget.margin_top = args.margin_top or beautiful.apw_margin_top or 1 -- top margin in pixels of progressbar
-    pulsewidget.margin_bottom = args.margin_bottom or beautiful.apw_margin_bottom or 5 -- bottom margin in pixels of progressbar
-    pulsewidget.step = args.step or 0.05 -- stepsize for volume change (ranges from 0 to 1)
-    pulsewidget.minstep = args.minstep or 0.01 -- minimum stepsize for volume
+    args = args or {}
+
     pulsewidget.color = args.color or beautiful.apw_fg_color or "#888888" --'#698f1e' -- foreground color of progessbar'#1a4b5c'
     pulsewidget.color_bg = args.color_bg or beautiful.apw_bg_color or "#343434" --'#33450f' -- background color'#0F1419'--
     pulsewidget.color_mute = args.color_mute or beautiful.apw_mute_fg_color or '#be2a15' -- foreground color when muted
     pulsewidget.color_bg_mute = args.color_bg_mute or beautiful.apw_mute_bg_color or pulsewidget.color_bg --'#532a15' -- background color when muted
-    pulsewidget.mixer1 = args.mixer1 or function() os.execute('veromix') end -- function to run on 1 button
-    pulsewidget.mixer2 = args.mixer2 or function() os.execute('pavucontrol') end -- function to run on 3 button
-    pulsewidget.progressbar_vert = args.progressbar_vert or true
-    pulsewidget.table = args.table or {}
-    pulsewidget.text_grabber = args.text_grabber or pulsewidget.text_grabber
+    local buttons = args.buttons or {
+        [1] = pulsewidget.togglemute,
+        [3] = function() awful.spawn.with_shell('pavucontrol') end,
+        [4] = function () pulsewidget.up() end,
+        [5] = function() pulsewidget.down() end
+    }
 
-    if args.container == false then
-        pulsewidget.container = nil
-    elseif args.container == nil or args.container == true then
-        pulsewidget.container = wibox.layout.fixed.horizontal()
+    if args.tooltip == false then
+        pulsewidget.tooltip = nil
+    elseif args.tooltip == nil or args.tooltip == true then
+        pulsewidget.tooltip = _tooltip
     else
-        pulsewidget.container = args.container
+        pulsewidget.tooltip = args.tooltip
     end
 
     if args.textbox == false then
@@ -174,6 +155,12 @@ local function new(args)
     else
         pulsewidget.textbox = args.textbox
     end
+    if pulsewidget.textbox then
+        _assign_buttons(pulsewidget.textbox, buttons)
+        if pulsewidget.tooltip then
+            _attach_tooltip(pulsewidget.textbox)
+        end
+    end
 
     if args.progressbar == false then
         pulsewidget.progressbar = nil
@@ -182,41 +169,28 @@ local function new(args)
     else
         pulsewidget.progressbar = args.progressbar
     end
-
-    -- End of configuration
-
-    local function add(item, name)
-        if pulsewidget.container then
-            pulsewidget.container:add(item)
-        else
-            pulsewidget.table[name] = item
+    if pulsewidget.progressbar then
+        _assign_buttons(pulsewidget.progressbar, buttons)
+        if pulsewidget.tooltip then
+            _attach_tooltip(pulsewidget.progressbar)
         end
     end
 
-    if pulsewidget.progressbar then
-        pulsewidget.progressbar:set_width(pulsewidget.width)
-        pulsewidget.progressbar:set_vertical(pulsewidget.progressbar_vert)
-
-        local margin = wibox.layout.margin(pulsewidget.progressbar,
-            pulsewidget.margin_right, pulsewidget.margin_left,
-            pulsewidget.margin_top, pulsewidget.margin_bottom)
-        add(margin, "progressbar")
-    end
-
-    if pulsewidget.textbox then
-        add(pulsewidget.textbox, "textbox")
-    end
     pulsewidget.update()
 
-    if pulsewidget.container then
-        --pulsewidget.container:buttons(pulsewidget.buttons)
-        return pulsewidget.container
-    else
-        --for i,k in pairs(pulsewidget.table) do
-        --k:buttons(pulsewidget.buttons)
-        --end
-        return pulsewidget.table
-    end
+    return {
+        progressbar = wibox.widget {
+            widget = pulsewidget.progressbar,
+            max_value = 1,
+            min_value = 0,
+            forced_width = 100
+        },
+        textbox = pulsewidget.textbox,
+        update = pulsewidget.update,
+        up = pulsewidget.up,
+        down = pulsewidget.down,
+        togglemute = pulsewidget.togglemute
+    }
 end
 
 function pulsewidget.mt:__call(...)
