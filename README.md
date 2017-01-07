@@ -1,27 +1,21 @@
-APW fork
-========
-Fork of [APW](http://github.com/mokasin/apw) with percentages![](http://i.imgur.com/5VR2kFr.png), progressbar vertical and themed.
-
-mouse clicks spawns: veromix and pavucontrol by left and right buttons
-
-
 Awesome Pulseaudio Widget
 =========================
+
+Fork of [APW](http://github.com/seniorivn/apw) with percentages ![](http://i.imgur.com/5VR2kFr.png)
+and support for Awesome 4.0
 
 Awesome Pulseaudio Widget (APW) is a little widget for
 [Awesome WM](http://awesome.naquadah.org/), using the awful progressbar widget,
 to display default's sink volume and control Pulseaudio.
 
-It's compatible with Awesome 3.5.
-
-First time I'm using Lua. So it might be a little bit quirky.
+It's compatible with Awesome 4.0.
 
 Get it
 ------
 
 ```sh
 cd $XDG_CONFIG_HOME/awesome/
-git clone https://github.com/mokasin/apw.git
+git clone https://github.com/p-himik/apw4.git
 ```
 
 Use it
@@ -32,15 +26,29 @@ Just put these line to the appropriate places in
 
 ```lua
 -- Load the widget.
-local APW = require("apw/widget")
+local APW = require("apw4/widget")
 
--- Example: Add to wibox. Here to the right. Do it the way you like it.
-right_layout:add(APW)
+-- This must go after beautiful.init(...)
+local apw = APW()
+
+-- The layout of widgets has to be configured in your rc.lua
+-- Somewhere where you create your wibars
+{ -- Right widgets on the top wibar
+    layout = wibox.layout.fixed.horizontal,
+    wibox.widget {
+        forced_width = 40,
+        widget = apw.progressbar
+    },
+    mykeyboardlayout,
+    wibox.widget.systray(),
+    mytextclock,
+    s.mylayoutbox,
+},
 
 -- Configure the hotkeys.
-awful.key({ }, "XF86AudioRaiseVolume",  APW.Up),
-awful.key({ }, "XF86AudioLowerVolume",  APW.Down),
-awful.key({ }, "XF86AudioMute",         APW.ToggleMute),
+awful.key({ }, "XF86AudioRaiseVolume",  apw.up),
+awful.key({ }, "XF86AudioLowerVolume",  apw.down),
+awful.key({ }, "XF86AudioMute",         apw.togglemute),
 
 ```
 
@@ -49,7 +57,7 @@ Customize it
 
 ### Theme
 
-*Important:* `beautiful.init` must be called before you `require` apw for
+*Important:* `beautiful.init` must be called before you call APW() for
 theming to work.
 
 Just add these variables to your Beautiful theme.lua file and set them
@@ -66,22 +74,22 @@ theme.apw_mute_bg_color = "#663333"
 
 ```
 
-### Directly edit widget.lua
-
-You also can customize some properties by editing the configuration variables
-directly in `widget.lua` (i.e. add a margin).
-It is advisable to customize the source file in an own branch. This makes it
-easy to update to a new version of APW via rebasing.
-
 Mixer
 ----
 
 Right-clicking the widget launches a mixer.  By default this is `pavucontrol`,
-but you can set a different command by calling SetMixer() on your APW object:
+but you can customize it by providing an optional `buttons` argument to APW:
 
 ```lua
 local APW = require("apw/widget")
-APW:SetMixer("mixer_command -whatever")
+local apw = APW{
+    buttons = {
+        [1] = pulsewidget.togglemute,
+        [3] = function() awful.spawn.with_shell('pavucontrol') end,
+        [4] = function () pulsewidget.up() end,
+        [5] = function() pulsewidget.down() end
+    }
+}
 ```
 
 ### Tip
@@ -89,11 +97,12 @@ You could update the widget periodically if you'd like. In case, the volume is
 changed from somewhere else.
 
 ```lua
-APWTimer = timer({ timeout = 0.5 }) -- set update interval in s
-APWTimer:connect_signal("timeout", APW.Update)
-APWTimer:start()
+apw_timer = timer({ timeout = 0.5 }) -- set update interval in s
+apw_timer:connect_signal("timeout", apw.update)
+apw_timer:start()
 ```
 
 Contributing
 ------------
 Just fork it and file a pull request. I'll look into it.
+
