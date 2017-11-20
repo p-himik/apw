@@ -77,6 +77,7 @@ function pulsewidget:show_tooltip()
     tooltip = naughty.notify({
         preset = fs_notification_preset,
         text = self.tooltip(),
+        font = 'monospace',
         timeout = 0,
         screen = mouse.screen,
     })
@@ -90,7 +91,7 @@ local function _tooltip()
     end
     volumes:close()
 
-    local names = io.popen("pacmd list-sinks | grep -i 'profile.name' | awk '{print $3}' | tr -d '\"'")
+    local names = io.popen("pacmd list-sinks | grep -i 'device.description' | awk -F' = ' '{print $2}' | tr -d '\"'")
     local nm = {}
     for v in names:lines() do
         table.insert(nm, v)
@@ -104,9 +105,14 @@ local function _tooltip()
     end
     mutes:close()
 
+    local max_nm_len = 0
+    for _, nm in pairs(nm) do
+        max_nm_len = math.max(max_nm_len, nm:len())
+    end
+
     local result = ""
     for i, k in pairs(vol) do
-        result = result .. nm[i] .. "\t" .. k .. mu[i] .. "\n"
+        result = result .. string.format('%-' .. max_nm_len .. 's\t%s%s', nm[i], k, mu[i]) .. '\n'
     end
     return result:sub(1, -2)  -- removing the last \n
 end
